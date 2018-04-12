@@ -18,18 +18,22 @@ async Task Main(string[] args)
 {
 
 	Uri identityServer = new Uri("https://atlasdemo.hqcatalyst.local/Identity");
+	Uri authorizationServer = new Uri("https://atlasdemo.hqcatalyst.local/authorization");
 	//Uri identityServer = new Uri("http://localhost/identity/v1");
 	//Uri identityServer = new Uri("https://fabricservices.hqcatalyst.local/identity2");
 	//Uri authorizationServer = new Uri("https://fabricservices.hqcatalyst.local/authorization2");
 	//Uri authorizationServer = new Uri("http://localhost/authorization");
-	Uri authorizationServer = new Uri("https://atlasdemo.hqcatalyst.local/authorization");
+
 
 	string issuingClientId = "fabric-installer";
 
 	string clientSecret = Util.GetPassword(identityServer + " client:" + issuingClientId);
 
-	
-
+	using (var authClient = new AuthorizationClient(authorizationServer, identityServer, issuingClientId, clientSecret))
+	{
+		var roles = await authClient.GetMemberRoles(@"hqcatalyst\ben.anderson", "windows");
+		roles.Dump();
+	}
 }
 
 public class ManageClients : FabricClient
@@ -181,6 +185,13 @@ public class AuthorizationClient : FabricClient
 	{
 		return await this.PostAsync<Client>($"/clients", client);
 	}
+	
+	public async Task<List<Role>> GetMemberRoles(string subjectId, string identityProvider)
+	{
+		var subjectIdStub = WebUtility.UrlEncode(subjectId);
+		var identityProviderStub = WebUtility.UrlEncode(identityProvider);
+		return await this.GetAsync<List<Role>>($"/user/{identityProviderStub}/{subjectIdStub}/roles");
+	}
 
 	public class UserPermissions
 	{
@@ -232,7 +243,7 @@ public class AuthorizationClient : FabricClient
 		public string SecurableItem { get; set; }
 		public string Name { get; set; }
 	}
-	
+
 	public class Client
 	{
 		public string Id { get; set; }
@@ -583,7 +594,7 @@ using (var authClient = new AuthorizationClient(authorizationServer, identitySer
 using (var authClient = new AuthorizationClient(authorizationServer, identityServer, issuingClientId, clientSecret))
 	{
 		var roles = new[] {
-				"DosAdmin",
+				"dosadmin",
 				"DataMartContributor",
 				"DataMartReader",
 				"DataMartPublicEntityReader",
@@ -629,7 +640,7 @@ using (var authClient = new AuthorizationClient(authorizationServer, identitySer
 		var roles = new[]
 			{
 				new {
-					Name = "DosAdmin",
+					Name = "dosadmin",
 					Permissions = new []
 					{
 						"readall",
@@ -855,8 +866,8 @@ using (var authClient = new AuthorizationClient(authorizationServer, identitySer
 		const string dosGrain = "dos";
 		const string datamartSecurableItem = "datamarts";
 		
-		//var rolesToAdd = new [] { new AuthorizationClient.Role{ Grain = dosGrain, SecurableItem = datamartSecurableItem, Name = "DosAdmin"}};
-		var rolesToAdd = await authClient.GetRoles(dosGrain, datamartSecurableItem, "DosAdmin");
+		//var rolesToAdd = new [] { new AuthorizationClient.Role{ Grain = dosGrain, SecurableItem = datamartSecurableItem, Name = "dosadmin"}};
+		var rolesToAdd = await authClient.GetRoles(dosGrain, datamartSecurableItem, "dosadmin");
 		var r = await authClient.AddUserToRole("windows", @"HQCATALYST\\ben.anderson", rolesToAdd.ToArray());
 		r.Dump();
 	}
@@ -878,6 +889,16 @@ using (var manageClient = new ManageClients(identityServer, identityServer, issu
 		var newClient = await authClient.PostClient(postClient);
 		JsonConvert.SerializeObject(newClient, Newtonsoft.Json.Formatting.Indented).Dump("new");
 	}
+
+*/
+
+/************************ get member roles ****************************
+
+using (var authClient = new AuthorizationClient(authorizationServer, identityServer, issuingClientId, clientSecret))
+{
+	var roles = await authClient.GetMemberRoles(@"hqcatalyst\ben.anderson", "windows");
+	roles.Dump();
+}
 
 */
 #endregion
