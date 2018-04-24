@@ -23,16 +23,46 @@ async Task Main(string[] args)
 	//Uri identityServer = new Uri("https://fabricservices.hqcatalyst.local/identity2");
 	//Uri authorizationServer = new Uri("https://fabricservices.hqcatalyst.local/authorization2");
 	//Uri authorizationServer = new Uri("http://localhost/authorization");
-
-
+	//Uri mdsServer = new Uri("https://atlasdemo.hqcatalyst.local/MetadataServiceV2/v2/");
+	
 	string issuingClientId = "fabric-installer";
 
 	string clientSecret = Util.GetPassword(identityServer + " client:" + issuingClientId);
 
-	using (var authClient = new AuthorizationClient(authorizationServer, identityServer, issuingClientId, clientSecret))
+	using (var manageClient = new ManageClients(identityServer, identityServer, issuingClientId, clientSecret))
 	{
-		var roles = await authClient.GetMemberRoles(@"hqcatalyst\ben.anderson", "windows");
-		roles.Dump();
+		var client = await manageClient.GetClient("atlas");
+		client.Dump("old");
+
+		string atlasUri = "https://access-control-demo.stackblitz.io";
+
+		client.allowedCorsOrigins.Add(atlasUri);
+
+		client.redirectUris.Add(atlasUri);
+		client.redirectUris.Add($"{atlasUri}/assets/auth.html");
+		client.redirectUris.Add($"{atlasUri}/assets/silent.html");
+
+		//client.postLogoutRedirectUris.Add($"{atlasUri}/client/logout");
+		client.postLogoutRedirectUris.Add(atlasUri);
+
+		var updated = await manageClient.PutClient(client);
+		updated.Dump("null means success!");
+
+		updated = await manageClient.GetClient("atlas");
+		updated.Dump("new");
+	}
+
+}
+
+public class ApiClient : FabricClient 
+{
+	public ApiClient(Uri baseUri, Uri tokenUri, string clientId, string clientSecret, string scope): base(baseUri, tokenUri, clientId, clientSecret, scope)
+	{
+	}
+	
+	public async Task<object> GetObject(string url) 
+	{
+		return await this.GetAsync(url);
 	}
 }
 
@@ -839,19 +869,21 @@ using (var manageClient = new ManageClients(identityServer, identityServer, issu
 {
 	var client = await manageClient.GetClient("atlas");
 	client.Dump("old");
+	
+	string atlasUri = "http://localhost/AtlasDev";
 
-	client.allowedCorsOrigins.Add("https://HC2252.hqcatalyst.local/Atlas");
+	client.allowedCorsOrigins.Add(atlasUri);
 
-	client.redirectUris.Add("https://HC2252.hqcatalyst.local/Atlas");
-	client.redirectUris.Add("https://HC2252.hqcatalyst.local/Atlas/client/auth.html");
-	client.redirectUris.Add("https://HC2252.hqcatalyst.local/Atlas/client/silent.html");
+	client.redirectUris.Add(atlasUri);
+	client.redirectUris.Add($"{atlasUri}/client/auth.html");
+	client.redirectUris.Add($"{atlasUri}/client/silent.html");
 
-	client.postLogoutRedirectUris.Add("https://HC2252.hqcatalyst.local/Atlas/client/logout");
-	client.postLogoutRedirectUris.Add("https://HC2252.hqcatalyst.local/Atlas");
+	client.postLogoutRedirectUris.Add($"{atlasUri}/client/logout");
+	client.postLogoutRedirectUris.Add(atlasUri);
 
 	var updated = await manageClient.PutClient(client);
 	updated.Dump("null means success!");
-	
+
 	updated = await manageClient.GetClient("atlas");
 	updated.Dump("new");
 }
@@ -900,5 +932,27 @@ using (var authClient = new AuthorizationClient(authorizationServer, identitySer
 	roles.Dump();
 }
 
+*/
+
+/*/************************ api example (not working) ****************************
+
+var scopes = new List<string>()
+		{
+		"openid",
+		"profile",
+		"fabric.profile",
+		"dos/metadata",
+		"fabric/authorization.read",
+		"fabric/authorization.write",
+		"fabric/idprovider.searchusers",
+		"fabric/authorization.dos.write",
+		"fabric/authorization.manageclients",
+		"fabric/identity.read"
+		};
+	using (var apiClient = new ApiClient(mdsServer, identityServer, issuingClientId, clientSecret, string.Join(" ", scopes)))
+	{
+		var obj = await apiClient.GetObject("Entities(1299)");
+		obj.Dump();
+	}
 */
 #endregion
