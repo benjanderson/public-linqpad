@@ -16,61 +16,148 @@
 
 async Task Main(string[] args)
 {
-
-	Uri identityServer = new Uri("https://atlasdemo.hqcatalyst.local/Identity");
-	Uri authorizationServer = new Uri("https://atlasdemo.hqcatalyst.local/authorization");
-	//Uri identityServer = new Uri("http://localhost/identity/v1");
-	//Uri identityServer = new Uri("https://fabricservices.hqcatalyst.local/identity2");
-	//Uri authorizationServer = new Uri("https://fabricservices.hqcatalyst.local/authorization2");
-	//Uri authorizationServer = new Uri("http://localhost/authorization");
-	//Uri mdsServer = new Uri("https://atlasdemo.hqcatalyst.local/MetadataServiceV2/v2/");
+	var discoveryClient = new DiscoveryClient(new Uri("https://hc2935.hqcatalyst.local/DiscoveryService/v1"));
 	
-	string issuingClientId = "fabric-installer";
-
-	string clientSecret = Util.GetPassword(identityServer + " client:" + issuingClientId);
-
-	using (var manageClient = new ManageClients(identityServer, identityServer, issuingClientId, clientSecret))
+	using(var metadata = new MetadataService2Client(discoveryClient))
 	{
-		var client = await manageClient.GetClient("atlas");
-		client.Dump("old");
-
-		string atlasUri = "https://access-control-demo.stackblitz.io";
-
-		client.allowedCorsOrigins.Add(atlasUri);
-
-		client.redirectUris.Add(atlasUri);
-		client.redirectUris.Add($"{atlasUri}/assets/auth.html");
-		client.redirectUris.Add($"{atlasUri}/assets/silent.html");
-
-		//client.postLogoutRedirectUris.Add($"{atlasUri}/client/logout");
-		client.postLogoutRedirectUris.Add(atlasUri);
-
-		var updated = await manageClient.PutClient(client);
-		updated.Dump("null means success!");
-
-		updated = await manageClient.GetClient("atlas");
-		updated.Dump("new");
+		var response = await metadata.SummaryDataMarts();
+		response.Dump();
 	}
-
+	
+	using(var auth = new AuthorizationClient(discoveryClient))
+	{
+		var result = await auth.GetRoles("dos", "datamart");
+		result.Dump();
+	}
 }
 
-public class ApiClient : FabricClient 
+public class MetadataService2Client : FabricClient
 {
-	public ApiClient(Uri baseUri, Uri tokenUri, string clientId, string clientSecret, string scope): base(baseUri, tokenUri, clientId, clientSecret, scope)
+	private const string Scope = "dos/metadata dos/metadata.serviceAdmin";
+	public MetadataService2Client(DiscoveryClient discoveryClient) : base(discoveryClient, DosService.MetadataService2, Scope)
 	{
 	}
-	
-	public async Task<object> GetObject(string url) 
+
+	public async Task<string> SummaryDataMarts()
 	{
-		return await this.GetAsync(url);
+		return await this.GetAsync($"/SummaryDataMarts");
 	}
+}
+
+public class DiscoveryClient
+{
+	private readonly Uri discoveryUri;
+
+	public DiscoveryClient(Uri discoveryUri)
+	{
+		this.discoveryUri = discoveryUri;
+	}
+
+	public async Task<Uri> GetService(DosService service)
+	{
+		string serviceName;
+		int version = 1;
+		switch (service)
+		{
+			case DosService.Atlas4:
+				serviceName = "Atlas4";
+				break;
+			case DosService.EDWConsole:
+				serviceName = "EDW Console";
+				break;
+			case DosService.DataProcessingService1:
+				serviceName = "DataProcessingService";
+				break;
+			case DosService.DataProcessingService2:
+				serviceName = "DataProcessingService";
+				version = 2;
+				break;
+			case DosService.MetadataService1:
+				serviceName = "MetadataService";
+				break;
+			case DosService.MetadataService2:
+				serviceName = "MetadataService";
+				version = 2;
+				break;
+			case DosService.SearchService:
+				serviceName = "SearchService";
+				break;
+			case DosService.IdentityService:
+				serviceName = "IdentityService";
+				break;
+			case DosService.IdentityProviderSearchService:
+				serviceName = "IdentityProviderSearchService";
+				break;
+			case DosService.AuthorizationService:
+				serviceName = "AuthorizationService";
+				break;
+			case DosService.AccessControl:
+				serviceName = "AccessControl";
+				break;
+			case DosService.TerminologyService:
+				serviceName = "TerminologyService";
+				break;
+			case DosService.AnalyticsService:
+				serviceName = "AnalyticsService";
+				break;
+			case DosService.UserConfigService:
+				serviceName = "UserConfigService";
+				break;
+			case DosService.OperationsConsole:
+				serviceName = "OperationsConsole";
+				break;
+			case DosService.Atlas:
+				serviceName = "Atlas";
+				break;
+			case DosService.IDEA:
+				serviceName = "IDEA";
+				break;
+			case DosService.AdministrationService:
+				serviceName = "AdministrationService";
+				break;
+			default:
+				throw new InvalidOperationException("service not valid");
+		}
+
+		var client = CustomHttpClientFactory.CreateClient();
+		var response = await client.GetAsync($"{this.discoveryUri}/Services(ServiceName='{serviceName}', Version={version})?$select=ServiceUrl");
+		var json = await response.Content.ReadAsAsync<DiscoveryODataResult>();
+		return json.ServiceUrl;
+	}
+
+	private class DiscoveryODataResult
+	{
+		public Uri ServiceUrl {get; set;}
+	}
+}
+
+public enum DosService
+{
+	Atlas4,
+	EDWConsole,
+	DataProcessingService1,
+	DataProcessingService2,
+	MetadataService1,
+	MetadataService2,
+	SearchService,
+	IdentityService,
+	IdentityProviderSearchService,
+	AuthorizationService,
+	AccessControl,
+	TerminologyService,
+	AnalyticsService,
+	UserConfigService,
+	OperationsConsole,
+	Atlas,
+	IDEA,
+	AdministrationService
 }
 
 public class ManageClients : FabricClient
 {
 	private const string Scope = "fabric/identity.manageresources";
 
-	public ManageClients(Uri identityUri, Uri TokenUri, string clientId, string clientSecret) : base(identityUri, TokenUri, clientId, clientSecret, Scope)
+	public ManageClients(DiscoveryClient discoveryClient) : base(discoveryClient, DosService.IdentityService, Scope)
 	{
 	}
 
@@ -140,7 +227,7 @@ public class AuthorizationClient : FabricClient
 {
 	private const string Scope = "fabric/authorization.read fabric/authorization.write fabric/authorization.manageclients fabric/authorization.dos.write";
 
-	public AuthorizationClient(Uri authorizationUri, Uri TokenUri, string clientId, string clientSecret) : base(authorizationUri, TokenUri, clientId, clientSecret, Scope)
+	public AuthorizationClient(DiscoveryClient discoveryClient) : base(discoveryClient, DosService.AuthorizationService, Scope)
 	{
 	}
 
@@ -186,10 +273,22 @@ public class AuthorizationClient : FabricClient
 		return await this.PostSuccessAsync($"/groups/{groupUrlStub}/roles", role);
 	}
 
+	public async Task<bool> AddUser(UserApiModel user)
+	{
+		return await this.PostSuccessAsync("/user", user);
+	}
+
 	public async Task<object> GetGroupByName(string groupName)
 	{
 		var groupUrlStub = WebUtility.UrlEncode(groupName);
 		return await this.GetAsync($"/groups/{groupUrlStub}/roles");
+	}
+
+	public async Task<object> GetGroupsForUser(string identityProvider, string subjectId)
+	{
+		var identityProviderStub = WebUtility.UrlEncode(identityProvider);
+		var subjectIdStub = WebUtility.UrlEncode(subjectId);
+		return await this.GetAsync($"/user/{identityProviderStub}/{subjectIdStub}/groups");
 	}
 
 	public async Task<UserPermissions> GetPermissionsForUser(string grain = null, string securableItem = null)
@@ -208,14 +307,29 @@ public class AuthorizationClient : FabricClient
 		var subjectIdStub = WebUtility.UrlEncode(subjectId);
 		var url = $"/user/{identityProviderStub}/{subjectIdStub}/roles";
 		return await this.PostAsync(url, roles);
+	}
 
+	public async Task<object> GetUserRoles(string identityProvider, string subjectId)
+	{
+		var identityProviderStub = WebUtility.UrlEncode(identityProvider);
+		var subjectIdStub = WebUtility.UrlEncode(subjectId);
+		var url = $"/user/{identityProviderStub}/{subjectIdStub}/roles";
+		return await this.GetAsync(url);
+	}
+
+	public async Task<object> GetUser(string identityProvider, string subjectId)
+	{
+		var identityProviderStub = WebUtility.UrlEncode(identityProvider);
+		var subjectIdStub = WebUtility.UrlEncode(subjectId);
+		var url = $"/user/{identityProviderStub}/{subjectIdStub}";
+		return await this.GetAsync(url);
 	}
 
 	public async Task<Client> PostClient(Client client)
 	{
 		return await this.PostAsync<Client>($"/clients", client);
 	}
-	
+
 	public async Task<List<Role>> GetMemberRoles(string subjectId, string identityProvider)
 	{
 		var subjectIdStub = WebUtility.UrlEncode(subjectId);
@@ -253,6 +367,17 @@ public class AuthorizationClient : FabricClient
 		public List<object> ChildRoles { get; set; }
 	}
 
+	public class UserApiModel
+	{
+		public string SubjectId { get; set; }
+
+		public string IdentityProvider { get; set; }
+
+		//public IEnumerable<string> Groups { get; set; }
+
+		//public ICollection<RoleApiModel> Roles { get; set; }
+	}
+
 	private static AuthorizationApiItem ParseAuthorizationItem(string item)
 	{
 		var parts = item.Split('/');
@@ -281,34 +406,60 @@ public class AuthorizationClient : FabricClient
 	}
 }
 
+public class TerminologyClient : FabricClient
+{
+	private const string Scope = "fabric/authorization.read";
+	public TerminologyClient(DiscoveryClient discoveryClient) : base(discoveryClient, DosService.TerminologyService, Scope)
+	{
+	}
+
+	public async Task<object> GetValueSetCodes()
+	{
+		return await this.GetAsync($"/valuesetcodes");
+	}
+}
+
 public abstract class FabricClient : IDisposable
 {
-	private readonly Uri tokenUri;
-	private readonly Uri baseUri;
-	private readonly string clientSecret;
+	private readonly DiscoveryClient discoveryClient;
+	
 	private readonly string scope;
-	private readonly string clientId;
+	
+	private const string clientId = "fabric-installer";
+	
+	private DosService service;
+	
+	private Uri _baseUri;
 
 	protected HttpClient HttpClient { private set; get; }
 
-	public FabricClient(Uri baseUri, Uri TokenUri, string clientId, string clientSecret, string scope)
+	public FabricClient(DiscoveryClient discoveryClient, DosService service, string scope)
 	{
-		this.baseUri = baseUri;
-		this.tokenUri = TokenUri;
-		this.clientId = clientId;
-		this.clientSecret = clientSecret;
+		this.discoveryClient = discoveryClient;
 		this.scope = scope;
+		this.service = service;
 	}
 
 	protected async Task SetClient()
 	{
 		if (this.HttpClient == null)
 		{
-			this.HttpClient = await CustomHttpClientFactory.GetTokenAndCreateClient(this.tokenUri, this.clientId, this.clientSecret, this.scope);
+			this.HttpClient = await CustomHttpClientFactory.GetTokenAndCreateClient(this.discoveryClient, clientId, this.scope);
 		}
 	}
+	
+	public async Task<Uri> GetBaseUri()
+	{
+		if (this._baseUri != null)
+		{
+			return this._baseUri;
+		}
+		
+		this._baseUri = await this.discoveryClient.GetService(this.service);
+		return _baseUri;
+	}
 
-	protected async Task<object> GetAsync(string url, Dictionary<string, string> parameters = null)
+	protected async Task<string> GetAsync(string url, Dictionary<string, string> parameters = null)
 	{
 		await this.SetClient();
 		if (parameters != null)
@@ -318,10 +469,12 @@ public abstract class FabricClient : IDisposable
 
 			}
 		}
-		var response = await HttpClient.GetAsync(Combine(this.baseUri, url));
-		await response.CustomEnsureSuccessStatusCode(url);
+		var baseUri = await GetBaseUri();
+		var fullUri = Combine(baseUri, url);
+		var response = await HttpClient.GetAsync(fullUri);
+		await response.CustomEnsureSuccessStatusCode(fullUri);
 		var json = await response.Content.ReadAsStringAsync();
-		return JsonConvert.DeserializeObject<object>(json);
+		return JValue.Parse(json).ToString(Newtonsoft.Json.Formatting.Indented);
 	}
 
 	protected async Task<T> GetAsync<T>(string url, Dictionary<string, string> parameters = null)
@@ -334,39 +487,49 @@ public abstract class FabricClient : IDisposable
 
 			}
 		}
-		var response = await HttpClient.GetAsync(Combine(this.baseUri, url));
-		await response.CustomEnsureSuccessStatusCode(url);
+		var baseUri = await GetBaseUri();
+		var fullUri = Combine(baseUri, url);
+		var response = await HttpClient.GetAsync(fullUri);
+		await response.CustomEnsureSuccessStatusCode(fullUri);
 		return await response.Content.ReadAsAsync<T>();
 	}
 
 	protected async Task<object> PostAsync(string url, object postObject)
 	{
 		await SetClient();
-		var response = await HttpClient.PostAsync(Combine(this.baseUri, url), CreateJsonContent(postObject));
-		await response.CustomEnsureSuccessStatusCode(url, JsonConvert.SerializeObject(postObject));
+		var baseUri = await GetBaseUri();
+		var fullUri = Combine(baseUri, url);
+		var response = await HttpClient.PostAsync(fullUri, CreateJsonContent(postObject));
+		await response.CustomEnsureSuccessStatusCode(fullUri, JsonConvert.SerializeObject(postObject));
 		return JsonConvert.DeserializeObject(await response.Content.ReadAsStringAsync());
 	}
 
 	protected async Task<T> PostAsync<T>(string url, T postObject)
 	{
 		await SetClient();
-		var response = await HttpClient.PostAsync(Combine(this.baseUri, url), CreateJsonContent(postObject));
-		await response.CustomEnsureSuccessStatusCode(url, JsonConvert.SerializeObject(postObject));
+		var baseUri = await GetBaseUri();
+		var fullUri = Combine(baseUri, url);
+		var response = await HttpClient.PostAsync(fullUri, CreateJsonContent(postObject));
+		await response.CustomEnsureSuccessStatusCode(fullUri, JsonConvert.SerializeObject(postObject));
 		return await response.Content.ReadAsAsync<T>();
 	}
 
 	protected async Task<T> PutAsync<T>(string url, T putObject)
 	{
 		await SetClient();
-		var response = await HttpClient.PutAsync(Combine(this.baseUri, url), CreateJsonContent(putObject));
-		await response.CustomEnsureSuccessStatusCode(url, JsonConvert.SerializeObject(putObject));
+		var baseUri = await GetBaseUri();
+		var fullUri = Combine(baseUri, url);
+		var response = await HttpClient.PutAsync(fullUri, CreateJsonContent(putObject));
+		await response.CustomEnsureSuccessStatusCode(fullUri, JsonConvert.SerializeObject(putObject));
 		return await response.Content.ReadAsAsync<T>();
 	}
 
 	protected async Task<bool> PostSuccessAsync<T>(string url, T postObject)
 	{
 		await SetClient();
-		var response = await HttpClient.PostAsync(Combine(this.baseUri, url), CreateJsonContent(postObject));
+		var baseUri = await GetBaseUri();
+		var fullUri = Combine(baseUri, url);
+		var response = await HttpClient.PostAsync(fullUri, CreateJsonContent(postObject));
 		await response.CustomEnsureSuccessStatusCode(url, JsonConvert.SerializeObject(postObject));
 		return response.IsSuccessStatusCode;
 	}
@@ -374,8 +537,10 @@ public abstract class FabricClient : IDisposable
 	protected async Task<bool> DeleteAsync(string url)
 	{
 		await SetClient();
-		var response = await HttpClient.DeleteAsync(Combine(this.baseUri, url));
-		await response.CustomEnsureSuccessStatusCode(url);
+		var baseUri = await GetBaseUri();
+		var fullUri = Combine(baseUri, url);
+		var response = await HttpClient.DeleteAsync(fullUri);
+		await response.CustomEnsureSuccessStatusCode(fullUri);
 		return response.IsSuccessStatusCode;
 	}
 
@@ -406,6 +571,11 @@ public abstract class FabricClient : IDisposable
 
 	private static string Combine(Uri uri1, string uri2)
 	{
+		if (uri1 == null)
+		{
+			throw new ArgumentNullException(nameof(uri1));
+		}
+
 		if (uri2 == null)
 		{
 			throw new ArgumentNullException(nameof(uri2));
@@ -417,12 +587,14 @@ public abstract class FabricClient : IDisposable
 
 public static class CustomHttpClientFactory
 {
-	public static async Task<HttpClient> GetTokenAndCreateClient(Uri tokenUri, string clientId, string secret, string scope)
+	public static async Task<HttpClient> GetTokenAndCreateClient(DiscoveryClient discoveryClient, string clientId, string scope)
 	{
-		string accessToken = await GetToken(tokenUri, clientId, secret, scope);
+		var fabricSecret = GetFabricInstallerSecret();
+		var authorization = await discoveryClient.GetService(DosService.IdentityService);
+		string accessToken = await GetToken(authorization, clientId, fabricSecret, scope);
 		return CreateClient(accessToken);
 	}
-
+	
 	public static HttpClient CreateClient(string accessToken)
 	{
 		var accessTokenClient = CreateHttpClient();
@@ -430,6 +602,40 @@ public static class CustomHttpClientFactory
 		accessTokenClient.DefaultRequestHeaders.Add("correlation-token", Guid.NewGuid().ToString());
 		accessTokenClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 		return accessTokenClient;
+	}
+	
+	public static HttpClient CreateClient()
+	{
+		return CreateHttpClient();
+	}
+
+	public static string GetFabricInstallerSecret()
+	{
+		var installConfig = Path.Combine(Environment.ExpandEnvironmentVariables("%ProgramW6432%"), "Health Catalyst", "install.config");
+		if (!File.Exists(installConfig))
+		{
+			throw new InvalidOperationException($"install config does not exist at '{installConfig}'. Please install DOS");
+		}
+		
+		XmlDocument doc = new XmlDocument();
+		doc.Load(installConfig);
+		XmlNode root = doc.DocumentElement;
+		
+		var fabricInstallerSecret = root.SelectNodes("/installation/settings/scope[@name='common']/variable[@name='fabricInstallerSecret']/@value")[0].Value;
+		var encryptionCertificateThumbprint = root.SelectNodes("/installation/settings/scope[@name='common']/variable[@name='encryptionCertificateThumbprint']/@value")[0].Value;
+		
+		if (string.IsNullOrWhiteSpace(fabricInstallerSecret))
+		{
+			throw new InvalidOperationException($"fabricInstallerSecret not found in {installConfig}");
+		}
+
+		if (string.IsNullOrWhiteSpace(encryptionCertificateThumbprint))
+		{
+			throw new InvalidOperationException($"encryptionCertificateThumbprint not found in {installConfig}");
+		}
+
+		var decryptedSecret = EncryptionUtility.DecryptString(fabricInstallerSecret, encryptionCertificateThumbprint);
+		return decryptedSecret;
 	}
 
 	private static async Task<string> GetToken(Uri tokenUri, string clientId, string secret, string scope)
@@ -448,7 +654,7 @@ public static class CustomHttpClientFactory
 				content.Headers.Clear();
 				content.Headers.Add("Content-Type", "application/x-www-form-urlencoded");
 				HttpResponseMessage tokenResponse = await tokenClient.PostAsync(tokenEndpoint, content);
-				await tokenResponse.CustomEnsureSuccessStatusCode(tokenUri.ToString(), "failed to get access token");
+				await tokenResponse.CustomEnsureSuccessStatusCode(tokenEndpoint.ToString(), "failed to get access token");
 				if (!tokenResponse.IsSuccessStatusCode)
 				{
 					throw new AuthenticationException($"Could not get token for: {tokenEndpoint}. Reason: {(int)tokenResponse.StatusCode} - {tokenResponse.ReasonPhrase}");
@@ -482,15 +688,25 @@ public static class CustomHttpClientFactory
 			else
 			{
 				string error;
-				var reason = await response.Content.ReadAsAsync<CustomHttpClientFactory.ErrorReason>();
-				if (reason != null)
+				var json = await response.Content.ReadAsStringAsync();
+				CustomHttpClientFactory.ErrorReason reason = null;
+				try
+				{
+					reason = JsonConvert.DeserializeObject<CustomHttpClientFactory.ErrorReason>(json);
+				}
+				catch (JsonReaderException)
+				{
+					// do nothing, its not a standard error
+				}
+
+				if (reason != null && !string.IsNullOrWhiteSpace(reason.message))
 				{
 					error = $"Request Failed for request {url}: {reason.code} - {reason.message}";
 					reason.Dump(error);
 				}
 				else
 				{
-					error = $"Request Failed for request {url}: {(int)response.StatusCode} - {response.ReasonPhrase}";
+					error = $"Request Failed for request {url}: {(int)response.StatusCode} - {response.ReasonPhrase} - {json}";
 					response.Dump(error);
 				}
 
@@ -499,7 +715,7 @@ public static class CustomHttpClientFactory
 					additionalInfo.Dump("json");
 				}
 
-				throw new HttpRequestException(error);
+				throw new FabricException(error, response.StatusCode.ToString(), additionalInfo);
 			}
 		}
 	}
@@ -536,6 +752,82 @@ public static class CustomHttpClientFactory
 		public string target { get; set; }
 		public object details { get; set; }
 		public object innerError { get; set; }
+	}
+
+	public class FabricException : Exception
+	{
+		public string statusCode;
+		public string additionalInfo;
+
+		public FabricException(string message, string statusCode, string additionalInfo) : base(message)
+		{
+			this.statusCode = statusCode;
+			this.additionalInfo = additionalInfo;
+		}
+	}
+}
+
+public static class EncryptionUtility
+{
+	public static string DecryptString(string encryptedString, string thumbPrint)
+	{
+		if (string.IsNullOrEmpty(encryptedString) || string.IsNullOrEmpty(thumbPrint))
+		{
+			throw new ArgumentException("encryptedString and thumbPrint are required");
+		}
+		if (!encryptedString.Contains("!!enc!!:"))
+		{
+			return encryptedString;// not encrypted, send it back
+		}
+		
+		var certs = EnumCertificates(StoreName.My, StoreLocation.LocalMachine).Cast< System.Security.Cryptography.X509Certificates.X509Certificate2 >();
+		var targetCert = certs.FirstOrDefault(x => x.Thumbprint == thumbPrint);
+		if (targetCert == null)
+		{
+			throw new InvalidOperationException($"Certificate with thumbprint {thumbPrint} does not exist");
+		}
+		
+		var rsaObj = (RSACryptoServiceProvider)targetCert.PrivateKey;
+		var cleaned = encryptedString.Replace("!!enc!!:", string.Empty);
+		var base64 = Convert.FromBase64String(cleaned);
+		var decryptedByes = rsaObj.Decrypt(base64, true);
+		var decryptedString = UTF8Encoding.UTF8.GetString(decryptedByes);
+		return decryptedString;
+	}
+
+	private static void PrintCertificateInfo(X509Certificate2 certificate, int index)
+	{
+		(new
+		{
+			certificate.FriendlyName,
+			Issuer = certificate.IssuerName.Name,
+			SubjectName = certificate.SubjectName.Name,
+			certificate.NotBefore,
+			certificate.NotAfter,
+			certificate.SerialNumber,
+			SignatureAlgorithm = certificate.SignatureAlgorithm.FriendlyName,
+			certificate.Thumbprint
+		}).Dump(index.ToString());
+	}
+
+	private static X509Certificate2Collection EnumCertificates(StoreName name, StoreLocation location)
+	{
+		X509Store store = new X509Store(name, location);
+		try
+		{
+			store.Open(OpenFlags.ReadOnly);
+			//int i = 1;
+			var certs = store.Certificates;
+			//foreach (X509Certificate2 certificate in certs)
+			//{
+			//	PrintCertificateInfo(certificate, i++);
+			//}
+			return certs;
+		}
+		finally
+		{
+			store.Close();
+		}
 	}
 }
 
@@ -934,25 +1226,14 @@ using (var authClient = new AuthorizationClient(authorizationServer, identitySer
 
 */
 
-/*/************************ api example (not working) ****************************
+/************************** add user ****************************
 
-var scopes = new List<string>()
-		{
-		"openid",
-		"profile",
-		"fabric.profile",
-		"dos/metadata",
-		"fabric/authorization.read",
-		"fabric/authorization.write",
-		"fabric/idprovider.searchusers",
-		"fabric/authorization.dos.write",
-		"fabric/authorization.manageclients",
-		"fabric/identity.read"
-		};
-	using (var apiClient = new ApiClient(mdsServer, identityServer, issuingClientId, clientSecret, string.Join(" ", scopes)))
+
+using (var authClient = new AuthorizationClient(authorizationServer, identityServer, issuingClientId, clientSecret))
 	{
-		var obj = await apiClient.GetObject("Entities(1299)");
-		obj.Dump();
+		var user = new AuthorizationClient.UserApiModel { IdentityProvider = "windows", SubjectId = "not valid"};
+		
+		await authClient.AddUser(user);
 	}
 */
 #endregion
